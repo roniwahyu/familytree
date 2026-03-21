@@ -284,7 +284,7 @@ function App() {
       <main className="flex-1 pt-14 sm:pt-16 overflow-hidden relative">
         {renderView()}
 
-        {/* Sidebar */}
+        {/* Detail Modal */}
         <Sidebar
           member={selectedMember}
           onClose={() => setSelectedMember(null)}
@@ -303,6 +303,7 @@ function App() {
           })() : 0}
           onEditMember={handleEditMember}
           onAddChild={handleAddChild}
+          onSelectMember={handleSelectMember}
         />
 
         {/* Floating Action Button for adding - mobile */}
