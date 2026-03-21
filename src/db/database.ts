@@ -210,6 +210,35 @@ export const dbOperations = {
     return flatToTree(members);
   },
 
+  // Export data as flat array (for CSV/XLSX)
+  async exportAsFlat(): Promise<FamilyMemberDB[]> {
+    return await db.members.orderBy('generation').toArray();
+  },
+
+  // Import data from flat array (from CSV/XLSX)
+  async importFromFlat(rows: Partial<FamilyMemberDB>[]): Promise<void> {
+    const now = new Date();
+    const members: FamilyMemberDB[] = rows.map((row, index) => ({
+      id: row.id || crypto.randomUUID(),
+      parentId: row.parentId ?? null,
+      name: row.name || '',
+      gender: (row.gender === 'L' || row.gender === 'P') ? row.gender : 'L',
+      dob: row.dob || '',
+      job: row.job || '',
+      address: row.address || '',
+      phone: row.phone || '',
+      photo: row.photo || '',
+      generation: row.generation || 1,
+      spouseName: row.spouseName || undefined,
+      spousePhoto: row.spousePhoto || undefined,
+      orderIndex: row.orderIndex ?? index,
+      createdAt: now,
+      updatedAt: now
+    }));
+    await db.members.clear();
+    await db.members.bulkAdd(members);
+  },
+
   // Get family statistics
   async getStatistics(): Promise<{
     totalMembers: number;

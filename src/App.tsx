@@ -95,8 +95,16 @@ function App() {
     await dbOperations.importFromTree(data);
   };
 
+  const handleImportFlatData = async (rows: Partial<FamilyMemberDB>[]) => {
+    await dbOperations.importFromFlat(rows);
+  };
+
   const handleExportData = async () => {
     return await dbOperations.exportAsTree();
+  };
+
+  const handleExportFlatData = async () => {
+    return await dbOperations.exportAsFlat();
   };
 
   const handleClearAll = async () => {
@@ -416,7 +424,9 @@ function App() {
         isOpen={showDataManager}
         onClose={() => setShowDataManager(false)}
         onImport={handleImportData}
+        onImportFlat={handleImportFlatData}
         onExport={handleExportData}
+        onExportFlat={handleExportFlatData}
         onClearAll={handleClearAll}
         onLoadSampleData={handleLoadSampleData}
       />

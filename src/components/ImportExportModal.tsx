@@ -1,24 +1,101 @@
 import React, { useState, useRef } from 'react';
+import * as XLSX from 'xlsx';
+import { FamilyMemberDB } from '../db/database';
+
+type ExportFormat = 'json' | 'csv' | 'xlsx';
 
 interface ImportExportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onImport: (data: any) => Promise<void>;
+  onImportFlat: (rows: Partial<FamilyMemberDB>[]) => Promise<void>;
   onExport: () => Promise<any>;
+  onExportFlat: () => Promise<FamilyMemberDB[]>;
   onClearAll: () => Promise<void>;
   onLoadSampleData: () => Promise<void>;
+}
+
+const FLAT_COLUMNS: (keyof FamilyMemberDB)[] = [
+  'id', 'parentId', 'name', 'gender', 'dob', 'job', 'address', 'phone',
+  'photo', 'generation', 'spouseName', 'spousePhoto', 'orderIndex'
+];
+
+const COLUMN_LABELS: Record<string, string> = {
+  id: 'ID',
+  parentId: 'Parent ID',
+  name: 'Nama',
+  gender: 'Jenis Kelamin (L/P)',
+  dob: 'Tempat/Tgl Lahir',
+  job: 'Pekerjaan',
+  address: 'Alamat',
+  phone: 'Telepon',
+  photo: 'Foto URL',
+  generation: 'Generasi',
+  spouseName: 'Nama Pasangan',
+  spousePhoto: 'Foto Pasangan URL',
+  orderIndex: 'Urutan'
+};
+
+function parseSheetToRows(sheet: XLSX.WorkSheet): Partial<FamilyMemberDB>[] {
+  const raw = XLSX.utils.sheet_to_json<Record<string, any>>(sheet);
+  return raw.map(row => {
+    // Map column labels back to keys
+    const labelToKey: Record<string, string> = {};
+    for (const [key, label] of Object.entries(COLUMN_LABELS)) {
+      labelToKey[label] = key;
+      labelToKey[key] = key; // also accept raw key names
+    }
+
+    const mapped: Record<string, any> = {};
+    for (const [col, val] of Object.entries(row)) {
+      const key = labelToKey[col] || col;
+      mapped[key] = val;
+    }
+
+    return {
+      id: mapped.id ? String(mapped.id) : undefined,
+      parentId: mapped.parentId ? String(mapped.parentId) : null,
+      name: mapped.name ? String(mapped.name) : '',
+      gender: mapped.gender === 'P' ? 'P' : 'L',
+      dob: mapped.dob ? String(mapped.dob) : '',
+      job: mapped.job ? String(mapped.job) : '',
+      address: mapped.address ? String(mapped.address) : '',
+      phone: mapped.phone ? String(mapped.phone) : '',
+      photo: mapped.photo ? String(mapped.photo) : '',
+      generation: mapped.generation ? Number(mapped.generation) : 1,
+      spouseName: mapped.spouseName ? String(mapped.spouseName) : undefined,
+      spousePhoto: mapped.spousePhoto ? String(mapped.spousePhoto) : undefined,
+      orderIndex: mapped.orderIndex != null ? Number(mapped.orderIndex) : undefined,
+    } as Partial<FamilyMemberDB>;
+  });
+}
+
+function flatToSheetData(members: FamilyMemberDB[]) {
+  return members.map(m => {
+    const row: Record<string, any> = {};
+    for (const col of FLAT_COLUMNS) {
+      row[COLUMN_LABELS[col] || col] = m[col] ?? '';
+    }
+    return row;
+  });
 }
 
 export default function ImportExportModal({
   isOpen,
   onClose,
   onImport,
+  onImportFlat,
   onExport,
+  onExportFlat,
   onClearAll,
   onLoadSampleData
 }: ImportExportModalProps) {
   const [activeTab, setActiveTab] = useState<'import' | 'export' | 'manage'>('import');
   const [importText, setImportText] = useState('');
+  const [importFileName, setImportFileName] = useState('');
+  const [importFileType, setImportFileType] = useState<'json' | 'csv' | 'xlsx' | ''>('');
+  const [importBinaryData, setImportBinaryData] = useState<ArrayBuffer | null>(null);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('json');
   const [exportText, setExportText] = useState('');
   const [status, setStatus] = useState<{ type: 'success' | 'error' | null; message: string }>({ type: null, message: '' });
   const [isLoading, setIsLoading] = useState(false);
@@ -29,13 +106,33 @@ export default function ImportExportModal({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      setImportText(text);
-      setStatus({ type: null, message: '' });
-    };
-    reader.readAsText(file);
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    setImportFileName(file.name);
+    setStatus({ type: null, message: '' });
+
+    if (ext === 'json' || ext === 'csv') {
+      setImportFileType(ext);
+      setImportBinaryData(null);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setImportText(event.target?.result as string);
+      };
+      reader.readAsText(file);
+    } else if (ext === 'xlsx' || ext === 'xls') {
+      setImportFileType('xlsx');
+      setImportText('');
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setImportBinaryData(event.target?.result as ArrayBuffer);
+        setImportText(`[File XLSX: ${file.name}]`);
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      setStatus({ type: 'error', message: 'Format file tidak didukung. Gunakan .json, .csv, atau .xlsx' });
+    }
+
+    // Reset file input
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleImport = async () => {
@@ -46,31 +143,85 @@ export default function ImportExportModal({
 
     setIsLoading(true);
     try {
-      const data = JSON.parse(importText);
-      await onImport(data);
-      setStatus({ type: 'success', message: 'Data berhasil diimpor!' });
+      if (importFileType === 'xlsx' && importBinaryData) {
+        // Parse XLSX
+        const workbook = XLSX.read(importBinaryData, { type: 'array' });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = parseSheetToRows(firstSheet);
+        if (rows.length === 0) throw new Error('File kosong');
+        await onImportFlat(rows);
+        setStatus({ type: 'success', message: `${rows.length} anggota berhasil diimpor dari XLSX!` });
+      } else if (importFileType === 'csv') {
+        // Parse CSV using SheetJS
+        const workbook = XLSX.read(importText, { type: 'string' });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = parseSheetToRows(firstSheet);
+        if (rows.length === 0) throw new Error('File kosong');
+        await onImportFlat(rows);
+        setStatus({ type: 'success', message: `${rows.length} anggota berhasil diimpor dari CSV!` });
+      } else {
+        // Parse JSON (tree format)
+        const data = JSON.parse(importText);
+        await onImport(data);
+        setStatus({ type: 'success', message: 'Data berhasil diimpor dari JSON!' });
+      }
+
       setImportText('');
-      setTimeout(() => {
-        onClose();
-      }, 1500);
-    } catch (error) {
-      setStatus({ type: 'error', message: 'Format JSON tidak valid. Pastikan data sesuai format.' });
+      setImportFileName('');
+      setImportFileType('');
+      setImportBinaryData(null);
+      setTimeout(() => { onClose(); }, 1500);
+    } catch (error: any) {
+      const msg = importFileType === 'json' || !importFileType
+        ? 'Format JSON tidak valid. Pastikan data sesuai format.'
+        : `Gagal membaca file ${importFileType.toUpperCase()}: ${error?.message || 'format tidak valid'}`;
+      setStatus({ type: 'error', message: msg });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleExport = async () => {
+  const handleExport = async (format: ExportFormat) => {
     setIsLoading(true);
+    setExportFormat(format);
     try {
-      const data = await onExport();
-      if (!data) {
-        setStatus({ type: 'error', message: 'Tidak ada data untuk diekspor' });
-        return;
+      if (format === 'json') {
+        const data = await onExport();
+        if (!data) {
+          setStatus({ type: 'error', message: 'Tidak ada data untuk diekspor' });
+          return;
+        }
+        setExportText(JSON.stringify(data, null, 2));
+        setStatus({ type: 'success', message: 'Data JSON siap diunduh!' });
+      } else {
+        const flatData = await onExportFlat();
+        if (!flatData || flatData.length === 0) {
+          setStatus({ type: 'error', message: 'Tidak ada data untuk diekspor' });
+          return;
+        }
+        const sheetData = flatToSheetData(flatData);
+        const ws = XLSX.utils.json_to_sheet(sheetData);
+
+        // Set column widths
+        ws['!cols'] = FLAT_COLUMNS.map(col => ({
+          wch: col === 'name' || col === 'address' ? 25 :
+               col === 'id' || col === 'parentId' ? 36 :
+               col === 'photo' || col === 'spousePhoto' ? 40 : 18
+        }));
+
+        if (format === 'csv') {
+          setExportText(XLSX.utils.sheet_to_csv(ws));
+          setStatus({ type: 'success', message: 'Data CSV siap diunduh!' });
+        } else {
+          // XLSX - generate and download immediately
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, 'Silsilah Keluarga');
+          const dateStr = new Date().toISOString().split('T')[0];
+          XLSX.writeFile(wb, `silsilah-keluarga-${dateStr}.xlsx`);
+          setExportText('');
+          setStatus({ type: 'success', message: 'File XLSX berhasil diunduh!' });
+        }
       }
-      const jsonStr = JSON.stringify(data, null, 2);
-      setExportText(jsonStr);
-      setStatus({ type: 'success', message: 'Data berhasil diekspor!' });
     } catch (error) {
       setStatus({ type: 'error', message: 'Gagal mengekspor data' });
     } finally {
@@ -81,11 +232,16 @@ export default function ImportExportModal({
   const handleDownload = () => {
     if (!exportText) return;
 
-    const blob = new Blob([exportText], { type: 'application/json' });
+    const isCSV = exportFormat === 'csv';
+    const mimeType = isCSV ? 'text/csv;charset=utf-8' : 'application/json';
+    const ext = isCSV ? 'csv' : 'json';
+    const bom = isCSV ? '\uFEFF' : ''; // BOM for CSV Excel compatibility
+
+    const blob = new Blob([bom + exportText], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `silsilah-keluarga-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `silsilah-keluarga-${new Date().toISOString().split('T')[0]}.${ext}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -96,7 +252,6 @@ export default function ImportExportModal({
 
   const handleCopyToClipboard = async () => {
     if (!exportText) return;
-
     try {
       await navigator.clipboard.writeText(exportText);
       setStatus({ type: 'success', message: 'Data disalin ke clipboard!' });
@@ -111,9 +266,7 @@ export default function ImportExportModal({
       await onClearAll();
       setStatus({ type: 'success', message: 'Semua data berhasil dihapus!' });
       setShowClearConfirm(false);
-      setTimeout(() => {
-        onClose();
-      }, 1500);
+      setTimeout(() => { onClose(); }, 1500);
     } catch (error) {
       setStatus({ type: 'error', message: 'Gagal menghapus data' });
     } finally {
@@ -126,9 +279,7 @@ export default function ImportExportModal({
     try {
       await onLoadSampleData();
       setStatus({ type: 'success', message: 'Data contoh berhasil dimuat!' });
-      setTimeout(() => {
-        onClose();
-      }, 1500);
+      setTimeout(() => { onClose(); }, 1500);
     } catch (error) {
       setStatus({ type: 'error', message: 'Gagal memuat data contoh' });
     } finally {
@@ -137,6 +288,12 @@ export default function ImportExportModal({
   };
 
   if (!isOpen) return null;
+
+  const formatButtons: { format: ExportFormat; icon: string; label: string; desc: string; activeClass: string }[] = [
+    { format: 'json', icon: 'fa-code', label: 'JSON', desc: 'Hierarki', activeClass: 'border-violet-500 bg-violet-50 text-violet-700 ring-2 ring-violet-200' },
+    { format: 'csv', icon: 'fa-file-csv', label: 'CSV', desc: 'Tabel teks', activeClass: 'border-emerald-500 bg-emerald-50 text-emerald-700 ring-2 ring-emerald-200' },
+    { format: 'xlsx', icon: 'fa-file-excel', label: 'XLSX', desc: 'Excel', activeClass: 'border-blue-500 bg-blue-50 text-blue-700 ring-2 ring-blue-200' },
+  ];
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -162,8 +319,8 @@ export default function ImportExportModal({
           <button
             onClick={() => { setActiveTab('import'); setStatus({ type: null, message: '' }); }}
             className={`flex-1 px-4 py-3 font-medium text-sm transition-colors ${
-              activeTab === 'import' 
-                ? 'text-violet-600 border-b-2 border-violet-600 bg-violet-50' 
+              activeTab === 'import'
+                ? 'text-violet-600 border-b-2 border-violet-600 bg-violet-50'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -171,10 +328,10 @@ export default function ImportExportModal({
             Import
           </button>
           <button
-            onClick={() => { setActiveTab('export'); setStatus({ type: null, message: '' }); handleExport(); }}
+            onClick={() => { setActiveTab('export'); setStatus({ type: null, message: '' }); setExportText(''); }}
             className={`flex-1 px-4 py-3 font-medium text-sm transition-colors ${
-              activeTab === 'export' 
-                ? 'text-violet-600 border-b-2 border-violet-600 bg-violet-50' 
+              activeTab === 'export'
+                ? 'text-violet-600 border-b-2 border-violet-600 bg-violet-50'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -184,8 +341,8 @@ export default function ImportExportModal({
           <button
             onClick={() => { setActiveTab('manage'); setStatus({ type: null, message: '' }); }}
             className={`flex-1 px-4 py-3 font-medium text-sm transition-colors ${
-              activeTab === 'manage' 
-                ? 'text-violet-600 border-b-2 border-violet-600 bg-violet-50' 
+              activeTab === 'manage'
+                ? 'text-violet-600 border-b-2 border-violet-600 bg-violet-50'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -213,18 +370,28 @@ export default function ImportExportModal({
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".json"
+                  accept=".json,.csv,.xlsx,.xls"
                   onChange={handleFileUpload}
                   className="hidden"
                 />
                 <i className="fas fa-file-upload text-4xl text-gray-400 mb-3"></i>
-                <p className="text-gray-600 mb-2">Upload file JSON</p>
+                <p className="text-gray-600 mb-1">Upload file data keluarga</p>
+                <p className="text-xs text-gray-400 mb-3">Format: JSON, CSV, atau XLSX</p>
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="px-4 py-2 bg-violet-100 text-violet-600 rounded-lg hover:bg-violet-200 transition-colors font-medium"
                 >
                   Pilih File
                 </button>
+                {importFileName && (
+                  <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 bg-violet-50 text-violet-700 rounded-full text-sm">
+                    <i className={`fas ${
+                      importFileType === 'xlsx' ? 'fa-file-excel' :
+                      importFileType === 'csv' ? 'fa-file-csv' : 'fa-file-code'
+                    }`}></i>
+                    {importFileName}
+                  </div>
+                )}
               </div>
 
               <div className="relative">
@@ -240,8 +407,13 @@ export default function ImportExportModal({
                   Paste JSON Data
                 </label>
                 <textarea
-                  value={importText}
-                  onChange={(e) => setImportText(e.target.value)}
+                  value={importFileType === 'xlsx' ? '' : importText}
+                  onChange={(e) => {
+                    setImportText(e.target.value);
+                    setImportFileType(e.target.value.trim().startsWith('{') || e.target.value.trim().startsWith('[') ? 'json' : 'csv');
+                    setImportFileName('');
+                    setImportBinaryData(null);
+                  }}
                   className="w-full h-48 px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-transparent font-mono text-sm resize-none"
                   placeholder='{"id": "1", "name": "Nama Lengkap", ...}'
                 />
@@ -264,21 +436,64 @@ export default function ImportExportModal({
                   </>
                 )}
               </button>
+
+              {/* Format Info */}
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <p className="text-xs text-amber-700">
+                  <i className="fas fa-info-circle mr-1"></i>
+                  <strong>JSON:</strong> Format tree (hierarki bersarang). &nbsp;
+                  <strong>CSV/XLSX:</strong> Format tabel datar dengan kolom: Nama, Jenis Kelamin, Generasi, Parent ID, dll.
+                </p>
+              </div>
             </div>
           )}
 
           {/* Export Tab */}
           {activeTab === 'export' && (
             <div className="space-y-4">
-              {isLoading ? (
-                <div className="text-center py-8">
+              {/* Format Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-3">Pilih format ekspor:</label>
+                <div className="grid grid-cols-3 gap-3">
+                  {formatButtons.map(({ format, icon, label, desc, activeClass }) => (
+                    <button
+                      key={format}
+                      onClick={() => handleExport(format)}
+                      disabled={isLoading}
+                      className={`relative px-4 py-4 rounded-xl border-2 transition-all font-medium text-sm flex flex-col items-center gap-2 disabled:opacity-50 ${
+                        exportFormat === format && exportText
+                          ? activeClass
+                          : 'border-gray-200 hover:border-gray-300 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      <i className={`fas ${icon} text-2xl`}></i>
+                      {label}
+                      <span className="text-[10px] text-gray-400">{desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {isLoading && (
+                <div className="text-center py-6">
                   <i className="fas fa-spinner fa-spin text-3xl text-violet-500 mb-3"></i>
                   <p className="text-gray-500">Mempersiapkan data...</p>
                 </div>
-              ) : exportText ? (
+              )}
+
+              {/* Preview & Download (for JSON and CSV) */}
+              {!isLoading && exportText && (
                 <>
                   <div className="bg-gray-50 rounded-lg p-4">
-                    <pre className="text-xs text-gray-600 overflow-x-auto max-h-64 overflow-y-auto">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-medium text-gray-500 uppercase">
+                        Preview {exportFormat.toUpperCase()}
+                      </span>
+                      <span className="text-xs text-gray-400">
+                        {exportText.length.toLocaleString()} karakter
+                      </span>
+                    </div>
+                    <pre className="text-xs text-gray-600 overflow-x-auto max-h-52 overflow-y-auto">
                       {exportText}
                     </pre>
                   </div>
@@ -289,7 +504,7 @@ export default function ImportExportModal({
                       className="flex-1 px-4 py-3 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors font-medium flex items-center justify-center gap-2"
                     >
                       <i className="fas fa-download"></i>
-                      Download JSON
+                      Download {exportFormat.toUpperCase()}
                     </button>
                     <button
                       onClick={handleCopyToClipboard}
@@ -300,10 +515,12 @@ export default function ImportExportModal({
                     </button>
                   </div>
                 </>
-              ) : (
-                <div className="text-center py-8">
-                  <i className="fas fa-inbox text-4xl text-gray-300 mb-3"></i>
-                  <p className="text-gray-500">Tidak ada data untuk diekspor</p>
+              )}
+
+              {!isLoading && !exportText && !status.type && (
+                <div className="text-center py-6 text-gray-400">
+                  <i className="fas fa-arrow-up text-2xl mb-2"></i>
+                  <p className="text-sm">Pilih format di atas untuk mengekspor data</p>
                 </div>
               )}
             </div>
@@ -345,7 +562,7 @@ export default function ImportExportModal({
                     <p className="text-sm text-red-700 mt-1">
                       Hapus semua data silsilah keluarga. Tindakan ini tidak dapat dibatalkan!
                     </p>
-                    
+
                     {showClearConfirm ? (
                       <div className="mt-3 flex gap-2">
                         <button
@@ -383,12 +600,13 @@ export default function ImportExportModal({
                   <div className="flex-1">
                     <h3 className="font-semibold text-gray-900">Tentang Penyimpanan</h3>
                     <p className="text-sm text-gray-600 mt-1">
-                      Data disimpan di browser Anda menggunakan IndexedDB. Data akan tetap tersimpan 
-                      meskipun browser ditutup, namun akan hilang jika Anda menghapus data browser 
+                      Data disimpan di browser Anda menggunakan IndexedDB. Data akan tetap tersimpan
+                      meskipun browser ditutup, namun akan hilang jika Anda menghapus data browser
                       atau menggunakan mode incognito.
                     </p>
                     <p className="text-sm text-gray-600 mt-2">
                       <strong>Tips:</strong> Gunakan fitur Export untuk membuat backup data Anda secara berkala.
+                      Anda dapat mengekspor ke JSON (hierarki), CSV (tabel), atau XLSX (Excel).
                     </p>
                   </div>
                 </div>
