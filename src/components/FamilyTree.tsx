@@ -557,7 +557,7 @@ const FamilyTree = forwardRef<FamilyTreeRef, FamilyTreeProps>(({
             <!-- Photos Container - Side by Side -->
             <div class="flex items-center flex-shrink-0 gap-0.5">
               <!-- Main Photo (Larger - Direct Descendant) -->
-              <div class="w-7 h-7 rounded-full overflow-hidden border-2 border-white shadow flex-shrink-0 bg-white">
+              <div class="w-7 h-7 rounded-full overflow-hidden border-2 border-white shadow flex-shrink-0 bg-white cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all" onclick="event.stopPropagation(); window.handleImageClick('${member.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${member.name}`}', '${member.name}', '${member.id}', false)">
                 <img 
                   src="${member.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${member.name}`}" 
                   alt="${member.name}"
@@ -567,7 +567,7 @@ const FamilyTree = forwardRef<FamilyTreeRef, FamilyTreeProps>(({
               </div>
               ${hasChildrenWithSpouse ? `
                 <!-- Spouse Photo (Smaller) - Side by Side -->
-                <div class="w-5 h-5 rounded-full overflow-hidden border border-white shadow flex-shrink-0 bg-white">
+                <div class="w-5 h-5 rounded-full overflow-hidden border border-white shadow flex-shrink-0 bg-white cursor-pointer hover:ring-2 hover:ring-pink-400 transition-all" onclick="event.stopPropagation(); window.handleImageClick('${member.spouse!.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${member.spouse!.name}`}', '${member.spouse!.name}', '${member.id}', true)">
                   <img 
                     src="${member.spouse!.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${member.spouse!.name}`}" 
                     alt="${member.spouse!.name}"
@@ -619,7 +619,7 @@ const FamilyTree = forwardRef<FamilyTreeRef, FamilyTreeProps>(({
           <!-- Photos Container - Side by Side -->
           <div class="flex items-center flex-shrink-0 gap-1">
             <!-- Main Photo (Larger - Direct Descendant) -->
-            <div class="${isSmall ? 'w-10 h-10' : 'w-12 h-12'} rounded-full overflow-hidden border-2 border-white shadow-md flex-shrink-0 bg-white">
+            <div class="${isSmall ? 'w-10 h-10' : 'w-12 h-12'} rounded-full overflow-hidden border-2 border-white shadow-md flex-shrink-0 bg-white cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all" onclick="event.stopPropagation(); window.handleImageClick('${member.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${member.name}`}', '${member.name}', '${member.id}', false)">
               <img 
                 src="${member.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${member.name}`}" 
                 alt="${member.name}"
@@ -629,7 +629,7 @@ const FamilyTree = forwardRef<FamilyTreeRef, FamilyTreeProps>(({
             </div>
             ${hasChildrenWithSpouse ? `
               <!-- Spouse Photo (Smaller) - Side by Side -->
-              <div class="${isSmall ? 'w-7 h-7' : 'w-9 h-9'} rounded-full overflow-hidden border-2 border-white shadow-md flex-shrink-0 bg-white">
+              <div class="${isSmall ? 'w-7 h-7' : 'w-9 h-9'} rounded-full overflow-hidden border-2 border-white shadow-md flex-shrink-0 bg-white cursor-pointer hover:ring-2 hover:ring-pink-400 transition-all" onclick="event.stopPropagation(); window.handleImageClick('${member.spouse!.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${member.spouse!.name}`}', '${member.spouse!.name}', '${member.id}', true)">
                 <img 
                   src="${member.spouse!.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${member.spouse!.name}`}" 
                   alt="${member.spouse!.name}"

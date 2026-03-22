@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { ImageKitProvider } from '@imagekit/react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import FamilyTree from './components/FamilyTree';
@@ -8,6 +9,7 @@ import ListView from './components/ListView';
 import MemberFormModal from './components/MemberFormModal';
 import ImportExportModal from './components/ImportExportModal';
 import ImageKitSettingsModal from './components/ImageKitSettingsModal';
+import ImageViewer from './components/ImageViewer';
 import { FamilyMember, ViewMode, TreeNode } from './types/family';
 import { db, dbOperations, flatToTree, FamilyMemberDB } from './db/database';
 import { familyData as sampleFamilyData } from './data/familyData';
@@ -31,6 +33,13 @@ function App() {
   const [showImageKitSettings, setShowImageKitSettings] = useState(false);
   const [imageKitConfig, setImageKitConfig] = useState<ImageKitConfig | null>(null);
 
+  // Image Viewer
+  const [imageViewerOpen, setImageViewerOpen] = useState(false);
+  const [imageViewerUrl, setImageViewerUrl] = useState('');
+  const [imageViewerAlt, setImageViewerAlt] = useState('');
+  const [imageViewerMemberId, setImageViewerMemberId] = useState<string | undefined>();
+  const [imageViewerIsSpouse, setImageViewerIsSpouse] = useState(false);
+
   const treeRef = useRef<{ zoomIn: () => void; zoomOut: () => void; resetView: () => void } | null>(null);
 
   // Load ImageKit config on mount
@@ -43,6 +52,45 @@ function App() {
     setShowImageKitSettings(false);
     getImageKitConfig().then(setImageKitConfig);
   };
+
+  // Handle image click
+  const handleImageClick = (imageUrl: string, altText: string, memberId?: string, isSpouse?: boolean) => {
+    setImageViewerUrl(imageUrl);
+    setImageViewerAlt(altText);
+    setImageViewerMemberId(memberId);
+    setImageViewerIsSpouse(isSpouse || false);
+    setImageViewerOpen(true);
+  };
+
+  // Handle image update from viewer
+  const handleImageUpdate = async (newUrl: string) => {
+    if (!imageViewerMemberId) return;
+
+    try {
+      if (imageViewerIsSpouse) {
+        // Update spouse photo
+        await dbOperations.updateMember(imageViewerMemberId, {
+          spousePhoto: newUrl
+        });
+      } else {
+        // Update member photo
+        await dbOperations.updateMember(imageViewerMemberId, {
+          photo: newUrl
+        });
+      }
+      // Refresh will happen automatically via useLiveQuery
+    } catch (error) {
+      console.error('Failed to update photo:', error);
+    }
+  };
+
+  // Make handleImageClick available globally for D3 nodes
+  useEffect(() => {
+    (window as any).handleImageClick = handleImageClick;
+    return () => {
+      delete (window as any).handleImageClick;
+    };
+  }, []);
 
   // Live query dari database
   const allMembers = useLiveQuery(() => db.members.toArray(), []);
@@ -281,8 +329,12 @@ function App() {
 
   const isTreeView = viewMode === 'vertical-tree' || viewMode === 'horizontal-tree';
 
+  // Get urlEndpoint from config or env
+  const urlEndpoint = imageKitConfig?.urlEndpoint || import.meta.env.VITE_IMAGEKIT_URL_ENDPOINT || '';
+
   return (
-    <div className="h-screen flex flex-col overflow-hidden bg-gray-100">
+    <ImageKitProvider urlEndpoint={urlEndpoint}>
+      <div className="h-screen flex flex-col overflow-hidden bg-gray-100">
       <Header
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
@@ -456,7 +508,19 @@ function App() {
         isOpen={showImageKitSettings}
         onClose={handleImageKitSettingsClose}
       />
+
+      {/* Image Viewer Modal */}
+      <ImageViewer
+        isOpen={imageViewerOpen}
+        imageUrl={imageViewerUrl}
+        altText={imageViewerAlt}
+        onClose={() => setImageViewerOpen(false)}
+        onImageUpdate={handleImageUpdate}
+        imageKitConfig={imageKitConfig}
+        memberId={imageViewerMemberId}
+      />
     </div>
+    </ImageKitProvider>
   );
 }
 

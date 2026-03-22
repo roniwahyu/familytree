@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FamilyMemberDB } from '../db/database';
 import { ImageKitConfig, uploadToImageKit } from '../utils/imagekit';
+import ImageCropper from './ImageCropper';
 
 interface MemberFormModalProps {
   isOpen: boolean;
@@ -55,6 +56,10 @@ export default function MemberFormModal({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [uploading, setUploading] = useState<'member' | 'spouse' | null>(null);
   const [uploadError, setUploadError] = useState('');
+  const [showCropper, setShowCropper] = useState(false);
+  const [cropperImage, setCropperImage] = useState<string | null>(null);
+  const [cropperTarget, setCropperTarget] = useState<'member' | 'spouse'>('member');
+  const [originalFileSize, setOriginalFileSize] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const spouseFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -101,12 +106,32 @@ export default function MemberFormModal({
       return;
     }
 
-    setUploading(target);
+    // Store original file size
+    setOriginalFileSize(file.size);
+
+    // Read file and show cropper
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCropperImage(reader.result as string);
+      setCropperTarget(target);
+      setShowCropper(true);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleCropComplete = async (croppedBlob: Blob) => {
+    if (!imageKitConfig) return;
+
+    setShowCropper(false);
+    setUploading(cropperTarget);
     setUploadError('');
 
     try {
+      // Convert blob to file
+      const file = new File([croppedBlob], 'photo.jpg', { type: 'image/jpeg' });
       const result = await uploadToImageKit(file, imageKitConfig, '/familytree/photos');
-      if (target === 'member') {
+      
+      if (cropperTarget === 'member') {
         setFormData(prev => ({ ...prev, photo: result.url }));
         setShowAvatarPicker(false);
       } else {
@@ -117,6 +142,7 @@ export default function MemberFormModal({
       setUploadError(error?.message || 'Gagal mengupload foto');
     } finally {
       setUploading(null);
+      setCropperImage(null);
     }
   };
 
@@ -144,6 +170,24 @@ export default function MemberFormModal({
   };
 
   if (!isOpen) return null;
+
+  // Show cropper if image is selected
+  if (showCropper && cropperImage) {
+    return (
+      <ImageCropper
+        image={cropperImage}
+        onCropComplete={handleCropComplete}
+        onCancel={() => {
+          setShowCropper(false);
+          setCropperImage(null);
+          setOriginalFileSize(0);
+        }}
+        aspectRatio={1}
+        shape="round"
+        originalSize={originalFileSize}
+      />
+    );
+  }
 
   const title = mode === 'edit'
     ? 'Edit Anggota Keluarga'

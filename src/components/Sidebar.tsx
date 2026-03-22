@@ -52,7 +52,13 @@ const Sidebar = ({ member, onClose, totalDescendants, onEditMember, onAddChild, 
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6">
                 {/* Photos */}
                 <div className="flex items-end gap-[-8px] flex-shrink-0">
-                  <div className={`w-24 h-24 sm:w-28 sm:h-28 rounded-full border-4 border-white shadow-xl overflow-hidden ring-4 ${genderRing}/30`}>
+                  <div 
+                    className={`w-24 h-24 sm:w-28 sm:h-28 rounded-full border-4 border-white shadow-xl overflow-hidden ring-4 ${genderRing}/30 cursor-pointer hover:ring-8 transition-all`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      (window as any).handleImageClick?.(avatarUrl(member.name, member.photo), member.name, member.id, false);
+                    }}
+                  >
                     <img
                       src={avatarUrl(member.name, member.photo)}
                       alt={member.name}
@@ -60,7 +66,13 @@ const Sidebar = ({ member, onClose, totalDescendants, onEditMember, onAddChild, 
                     />
                   </div>
                   {hasSpouse && (
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full border-4 border-white shadow-xl overflow-hidden -ml-4 ring-4 ring-white/30">
+                    <div 
+                      className="w-16 h-16 sm:w-20 sm:h-20 rounded-full border-4 border-white shadow-xl overflow-hidden -ml-4 ring-4 ring-white/30 cursor-pointer hover:ring-8 transition-all"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        (window as any).handleImageClick?.(avatarUrl(member.spouse!.name, member.spouse!.photo), member.spouse!.name, member.id, true);
+                      }}
+                    >
                       <img
                         src={avatarUrl(member.spouse!.name, member.spouse!.photo)}
                         alt={member.spouse!.name}
@@ -140,7 +152,13 @@ const Sidebar = ({ member, onClose, totalDescendants, onEditMember, onAddChild, 
                         Pasangan
                       </h3>
                       <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white shadow flex-shrink-0">
+                        <div 
+                          className="w-12 h-12 rounded-full overflow-hidden border-2 border-white shadow flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-pink-400 transition-all"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            (window as any).handleImageClick?.(avatarUrl(member.spouse!.name, member.spouse!.photo), member.spouse!.name, member.id, true);
+                          }}
+                        >
                           <img
                             src={avatarUrl(member.spouse.name, member.spouse.photo)}
                             alt={member.spouse.name}
@@ -230,7 +248,13 @@ const Sidebar = ({ member, onClose, totalDescendants, onEditMember, onAddChild, 
                             <span className="w-6 h-6 rounded-full bg-white flex items-center justify-center text-xs font-bold text-gray-600 shadow-sm flex-shrink-0">
                               {index + 1}
                             </span>
-                            <div className="w-9 h-9 rounded-full overflow-hidden border-2 border-white shadow-sm flex-shrink-0">
+                            <div 
+                              className="w-9 h-9 rounded-full overflow-hidden border-2 border-white shadow-sm flex-shrink-0 cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                (window as any).handleImageClick?.(avatarUrl(child.name, child.photo), child.name, child.id, false);
+                              }}
+                            >
                               <img
                                 src={avatarUrl(child.name, child.photo)}
                                 alt={child.name}
