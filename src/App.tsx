@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
@@ -7,9 +7,11 @@ import TableView from './components/TableView';
 import ListView from './components/ListView';
 import MemberFormModal from './components/MemberFormModal';
 import ImportExportModal from './components/ImportExportModal';
+import ImageKitSettingsModal from './components/ImageKitSettingsModal';
 import { FamilyMember, ViewMode, TreeNode } from './types/family';
 import { db, dbOperations, flatToTree, FamilyMemberDB } from './db/database';
 import { familyData as sampleFamilyData } from './data/familyData';
+import { ImageKitConfig, getImageKitConfig } from './utils/imagekit';
 
 function App() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -24,8 +26,23 @@ function App() {
   const [memberFormMode, setMemberFormMode] = useState<'add' | 'edit' | 'addChild'>('add');
   const [editingMember, setEditingMember] = useState<FamilyMemberDB | null>(null);
   const [parentForNewChild, setParentForNewChild] = useState<{ id: string; name: string; generation: number } | null>(null);
-  
+
+  // ImageKit
+  const [showImageKitSettings, setShowImageKitSettings] = useState(false);
+  const [imageKitConfig, setImageKitConfig] = useState<ImageKitConfig | null>(null);
+
   const treeRef = useRef<{ zoomIn: () => void; zoomOut: () => void; resetView: () => void } | null>(null);
+
+  // Load ImageKit config on mount
+  useEffect(() => {
+    getImageKitConfig().then(setImageKitConfig);
+  }, []);
+
+  // Reload config when settings modal closes
+  const handleImageKitSettingsClose = () => {
+    setShowImageKitSettings(false);
+    getImageKitConfig().then(setImageKitConfig);
+  };
 
   // Live query dari database
   const allMembers = useLiveQuery(() => db.members.toArray(), []);
@@ -277,6 +294,7 @@ function App() {
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         onOpenDataManager={() => setShowDataManager(true)}
+        onOpenSettings={() => setShowImageKitSettings(true)}
         onAddRoot={handleAddRoot}
         hasData={hasData}
       />
@@ -418,6 +436,7 @@ function App() {
         parentName={parentForNewChild?.name}
         mode={memberFormMode}
         nextGeneration={parentForNewChild ? parentForNewChild.generation + 1 : 1}
+        imageKitConfig={imageKitConfig}
       />
 
       {/* Import/Export Modal */}
@@ -430,6 +449,12 @@ function App() {
         onExportFlat={handleExportFlatData}
         onClearAll={handleClearAll}
         onLoadSampleData={handleLoadSampleData}
+      />
+
+      {/* ImageKit Settings Modal */}
+      <ImageKitSettingsModal
+        isOpen={showImageKitSettings}
+        onClose={handleImageKitSettingsClose}
       />
     </div>
   );

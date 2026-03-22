@@ -12,6 +12,7 @@ interface HeaderProps {
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
   onOpenDataManager: () => void;
+  onOpenSettings: () => void;
   onAddRoot: () => void;
   hasData: boolean;
 }
@@ -27,6 +28,7 @@ const Header = ({
   viewMode,
   onViewModeChange,
   onOpenDataManager,
+  onOpenSettings,
   onAddRoot,
   hasData
 }: HeaderProps) => {
@@ -167,6 +169,15 @@ const Header = ({
               <i className="fas fa-database text-sm"></i>
             </button>
 
+            {/* Settings Button */}
+            <button
+              onClick={onOpenSettings}
+              className="hidden sm:flex w-9 h-9 rounded-full bg-orange-100 hover:bg-orange-200 text-orange-600 hover:text-orange-700 items-center justify-center transition-all"
+              title="Pengaturan ImageKit"
+            >
+              <i className="fas fa-cog text-sm"></i>
+            </button>
+
             {/* Zoom Controls - Only show for tree views */}
             {isTreeView && (
               <div className="hidden sm:flex items-center space-x-1 sm:space-x-2">
@@ -277,6 +288,15 @@ const Header = ({
               >
                 <i className="fas fa-database"></i>
                 Kelola Data
+              </button>
+              <button
+                onClick={() => {
+                  onOpenSettings();
+                  setShowMobileMenu(false);
+                }}
+                className="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-orange-100 hover:bg-orange-200 text-orange-600 text-sm font-medium transition-all"
+              >
+                <i className="fas fa-cog"></i>
               </button>
             </div>
 

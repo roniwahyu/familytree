@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FamilyMemberDB } from '../db/database';
+import { ImageKitConfig, uploadToImageKit } from '../utils/imagekit';
 
 interface MemberFormModalProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface MemberFormModalProps {
   parentName?: string;
   mode: 'add' | 'edit' | 'addChild';
   nextGeneration?: number;
+  imageKitConfig?: ImageKitConfig | null;
 }
 
 const avatarOptions = [
@@ -34,7 +36,8 @@ export default function MemberFormModal({
   parentId,
   parentName,
   mode,
-  nextGeneration = 1
+  nextGeneration = 1,
+  imageKitConfig
 }: MemberFormModalProps) {
   const [formData, setFormData] = useState({
     name: '',
@@ -50,6 +53,10 @@ export default function MemberFormModal({
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [showSpouseAvatarPicker, setShowSpouseAvatarPicker] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [uploading, setUploading] = useState<'member' | 'spouse' | null>(null);
+  const [uploadError, setUploadError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const spouseFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (member && (mode === 'edit')) {
@@ -78,11 +85,44 @@ export default function MemberFormModal({
       });
     }
     setShowDeleteConfirm(false);
+    setUploadError('');
   }, [member, mode, isOpen]);
+
+  const handleFileUpload = async (file: File, target: 'member' | 'spouse') => {
+    if (!imageKitConfig) return;
+
+    // Validate file
+    if (!file.type.startsWith('image/')) {
+      setUploadError('File harus berupa gambar');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError('Ukuran file maksimal 10MB');
+      return;
+    }
+
+    setUploading(target);
+    setUploadError('');
+
+    try {
+      const result = await uploadToImageKit(file, imageKitConfig, '/familytree/photos');
+      if (target === 'member') {
+        setFormData(prev => ({ ...prev, photo: result.url }));
+        setShowAvatarPicker(false);
+      } else {
+        setFormData(prev => ({ ...prev, spousePhoto: result.url }));
+        setShowSpouseAvatarPicker(false);
+      }
+    } catch (error: any) {
+      setUploadError(error?.message || 'Gagal mengupload foto');
+    } finally {
+      setUploading(null);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const memberData: Partial<FamilyMemberDB> = {
       name: formData.name,
       gender: formData.gender,
@@ -105,11 +145,52 @@ export default function MemberFormModal({
 
   if (!isOpen) return null;
 
-  const title = mode === 'edit' 
-    ? 'Edit Anggota Keluarga' 
-    : mode === 'addChild' 
-      ? `Tambah Anak dari ${parentName}` 
+  const title = mode === 'edit'
+    ? 'Edit Anggota Keluarga'
+    : mode === 'addChild'
+      ? `Tambah Anak dari ${parentName}`
       : 'Tambah Anggota Keluarga';
+
+  const hasImageKit = !!imageKitConfig;
+
+  const renderUploadButton = (target: 'member' | 'spouse') => {
+    if (!hasImageKit) return null;
+    const isUploading = uploading === target;
+    const inputRef = target === 'member' ? fileInputRef : spouseFileInputRef;
+    const size = target === 'member' ? 'w-8 h-8' : 'w-6 h-6';
+    const iconSize = target === 'member' ? 'text-sm' : 'text-xs';
+    const bgColor = target === 'member' ? 'bg-blue-500 hover:bg-blue-600' : 'bg-blue-500 hover:bg-blue-600';
+    const position = target === 'member' ? 'absolute bottom-0 left-0' : 'absolute bottom-0 left-0';
+
+    return (
+      <>
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleFileUpload(file, target);
+            e.target.value = '';
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={isUploading}
+          className={`${position} ${size} ${bgColor} text-white rounded-full flex items-center justify-center transition-colors disabled:opacity-50`}
+          title="Upload foto"
+        >
+          {isUploading ? (
+            <i className={`fas fa-spinner fa-spin ${iconSize}`}></i>
+          ) : (
+            <i className={`fas fa-upload ${iconSize}`}></i>
+          )}
+        </button>
+      </>
+    );
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -130,6 +211,17 @@ export default function MemberFormModal({
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
           <div className="space-y-4">
+            {/* Upload Error */}
+            {uploadError && (
+              <div className="px-3 py-2 bg-red-50 text-red-600 rounded-lg text-xs flex items-center gap-2">
+                <i className="fas fa-exclamation-circle"></i>
+                {uploadError}
+                <button type="button" onClick={() => setUploadError('')} className="ml-auto">
+                  <i className="fas fa-times"></i>
+                </button>
+              </div>
+            )}
+
             {/* Photo */}
             <div className="flex justify-center">
               <div className="relative">
@@ -138,6 +230,7 @@ export default function MemberFormModal({
                   alt="Avatar"
                   className="w-24 h-24 rounded-full border-4 border-emerald-200 object-cover"
                 />
+                {/* Avatar picker toggle */}
                 <button
                   type="button"
                   onClick={() => setShowAvatarPicker(!showAvatarPicker)}
@@ -145,8 +238,18 @@ export default function MemberFormModal({
                 >
                   <i className="fas fa-camera text-sm"></i>
                 </button>
+                {/* Upload button */}
+                {renderUploadButton('member')}
               </div>
             </div>
+
+            {/* Uploading indicator */}
+            {uploading === 'member' && (
+              <div className="text-center text-xs text-blue-600">
+                <i className="fas fa-spinner fa-spin mr-1"></i>
+                Mengupload foto ke ImageKit...
+              </div>
+            )}
 
             {/* Avatar Picker */}
             {showAvatarPicker && (
@@ -169,6 +272,31 @@ export default function MemberFormModal({
                     </button>
                   ))}
                 </div>
+
+                {/* Upload from file */}
+                {hasImageKit && (
+                  <div className="mt-3 pt-3 border-t border-gray-200">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading === 'member'}
+                      className="w-full px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {uploading === 'member' ? (
+                        <>
+                          <i className="fas fa-spinner fa-spin"></i>
+                          Mengupload...
+                        </>
+                      ) : (
+                        <>
+                          <i className="fas fa-cloud-upload-alt"></i>
+                          Upload Foto dari Perangkat
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
                 <div className="mt-2">
                   <input
                     type="text"
@@ -178,6 +306,14 @@ export default function MemberFormModal({
                     className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                   />
                 </div>
+
+                {/* ImageKit hint */}
+                {!hasImageKit && (
+                  <p className="text-[10px] text-gray-400 mt-2 text-center">
+                    <i className="fas fa-info-circle mr-1"></i>
+                    Hubungkan ImageKit di Pengaturan untuk upload foto dari perangkat
+                  </p>
+                )}
               </div>
             )}
 
@@ -295,7 +431,7 @@ export default function MemberFormModal({
                 <i className="fas fa-heart text-pink-500"></i>
                 Data Pasangan (Opsional)
               </h3>
-              
+
               <div className="space-y-3">
                 {/* Spouse Photo */}
                 {formData.spouseName && (
@@ -313,7 +449,16 @@ export default function MemberFormModal({
                       >
                         <i className="fas fa-camera text-xs"></i>
                       </button>
+                      {renderUploadButton('spouse')}
                     </div>
+                  </div>
+                )}
+
+                {/* Uploading indicator for spouse */}
+                {uploading === 'spouse' && (
+                  <div className="text-center text-xs text-blue-600">
+                    <i className="fas fa-spinner fa-spin mr-1"></i>
+                    Mengupload foto pasangan ke ImageKit...
                   </div>
                 )}
 
@@ -337,6 +482,41 @@ export default function MemberFormModal({
                           <img src={avatar} alt={`Avatar ${index + 1}`} className="w-full h-full object-cover" />
                         </button>
                       ))}
+                    </div>
+
+                    {/* Upload from file for spouse */}
+                    {hasImageKit && (
+                      <div className="mt-3 pt-3 border-t border-pink-200">
+                        <button
+                          type="button"
+                          onClick={() => spouseFileInputRef.current?.click()}
+                          disabled={uploading === 'spouse'}
+                          className="w-full px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                          {uploading === 'spouse' ? (
+                            <>
+                              <i className="fas fa-spinner fa-spin"></i>
+                              Mengupload...
+                            </>
+                          ) : (
+                            <>
+                              <i className="fas fa-cloud-upload-alt"></i>
+                              Upload Foto Pasangan
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
+
+                    {/* URL input for spouse photo */}
+                    <div className="mt-2">
+                      <input
+                        type="text"
+                        placeholder="Atau masukkan URL foto pasangan..."
+                        value={formData.spousePhoto}
+                        onChange={(e) => setFormData({ ...formData, spousePhoto: e.target.value })}
+                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
+                      />
                     </div>
                   </div>
                 )}
